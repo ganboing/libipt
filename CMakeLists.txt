@@ -319,3 +319,5 @@ endif (SIDEBAND)
 if (PEVENT)
   add_subdirectory(pevent)
 endif (PEVENT)
+
+include (cmake/FindAsan.cmake)
