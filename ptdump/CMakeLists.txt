@@ -47,8 +47,14 @@ endif (CMAKE_HOST_WIN32)
 add_executable(ptdump
   ${PTDUMP_FILES}
 )
-
 target_link_libraries(ptdump libipt)
 if (SIDEBAND)
   target_link_libraries(ptdump libipt-sb)
 endif (SIDEBAND)
+
+install(TARGETS ptdump
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
