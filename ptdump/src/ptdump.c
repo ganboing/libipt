@@ -45,6 +45,8 @@
 #include <stdio.h>
 #include <errno.h>
 #include <limits.h>
+#include <unistd.h>
+#include <sys/mman.h>
 
 #if defined(_MSC_VER) && (_MSC_VER < 1900)
 #  define snprintf _snprintf_c
@@ -353,7 +355,7 @@ static int load_file(uint8_t **buffer, size_t *psize, const char *filename,
 		     uint64_t offset, uint64_t size, const char *prog)
 {
 	uint8_t *content;
-	size_t read;
+	//size_t read;
 	FILE *file;
 	long fsize, begin, end;
 	int errcode;
@@ -408,15 +410,19 @@ static int load_file(uint8_t **buffer, size_t *psize, const char *filename,
 		end = (long) range_end;
 	}
 
+	content = mmap(NULL, fsize, PROT_READ, MAP_SHARED, fileno(file), 0);
+	if(content == MAP_FAILED)
+		goto err_file;
+	content += begin;
 	fsize = end - begin;
-
+#if 0
 	content = malloc((size_t) fsize);
 	if (!content) {
 		fprintf(stderr, "%s: failed to allocated memory %s.\n",
 			prog, filename);
 		goto err_file;
 	}
-
+#endif
 	errcode = fseek(file, begin, SEEK_SET);
 	if (errcode) {
 		fprintf(stderr, "%s: failed to load %s: %d.\n",
@@ -424,13 +430,14 @@ static int load_file(uint8_t **buffer, size_t *psize, const char *filename,
 		goto err_content;
 	}
 
+#if 0
 	read = fread(content, (size_t) fsize, 1u, file);
 	if (read != 1) {
 		fprintf(stderr, "%s: failed to load %s: %d.\n",
 			prog, filename, errno);
 		goto err_content;
 	}
-
+#endif
 	fclose(file);
 
 	*buffer = content;
@@ -439,7 +446,7 @@ static int load_file(uint8_t **buffer, size_t *psize, const char *filename,
 	return 0;
 
 err_content:
-	free(content);
+	//free(content);
 
 err_file:
 	fclose(file);
@@ -1944,7 +1951,7 @@ int main(int argc, char *argv[])
 	errcode = dump(&tracking, &config, &options);
 
 out:
-	free(config.begin);
+	//free(config.begin);
 	ptdump_tracking_fini(&tracking);
 
 	return -errcode;
