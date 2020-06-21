@@ -103,6 +103,8 @@ struct ptdump_options {
 	/* Don't show CYC packets and ignore them when tracking time. */
 	uint32_t no_cyc:1;
 
+	uint32_t tma_skip_1b:1;
+
 #if defined(FEATURE_SIDEBAND)
 	/* Print sideband warnings. */
 	uint32_t print_sb_warnings:1;
@@ -172,6 +174,8 @@ struct ptdump_tracking {
 
 	/* Header vs. normal decode.  Set if decoding PSB+. */
 	uint32_t in_header:1;
+
+	uint32_t in_nr:1;
 };
 
 static int usage(const char *name)
@@ -248,7 +252,7 @@ static int help(const char *name)
 	printf("  --nom-freq <n>            set the nominal frequency (MSR_PLATFORM_INFO[15:8]) to <n>.\n");
 	printf("  --cpuid-0x15.eax          set the value of cpuid[0x15].eax.\n");
 	printf("  --cpuid-0x15.ebx          set the value of cpuid[0x15].ebx.\n");
-	printf("  <ptfile>[:<from>[-<to>]]  load the processor trace data from <ptfile>;\n");
+	printf("  <ptfile>[:<from>[:<to>]]  load the processor trace data from <ptfile>;\n");
 
 	return 1;
 }
@@ -259,7 +263,7 @@ static int version(const char *name)
 	return 1;
 }
 
-static int parse_range(const char *arg, uint64_t *begin, uint64_t *end)
+static int parse_range(const char *arg, int64_t *begin, int64_t *end)
 {
 	char *rest;
 
@@ -267,17 +271,17 @@ static int parse_range(const char *arg, uint64_t *begin, uint64_t *end)
 		return 0;
 
 	errno = 0;
-	*begin = strtoull(arg, &rest, 0);
+	*begin = strtoll(arg, &rest, 0);
 	if (errno)
 		return -1;
 
 	if (!*rest)
 		return 1;
 
-	if (*rest != '-')
+	if (*rest != ':')
 		return -1;
 
-	*end = strtoull(rest+1, &rest, 0);
+	*end = strtoll(rest+1, &rest, 0);
 	if (errno || *rest)
 		return -1;
 
@@ -297,7 +301,7 @@ static int parse_range(const char *arg, uint64_t *begin, uint64_t *end)
  */
 static int preprocess_filename(char *filename, uint64_t *offset, uint64_t *size)
 {
-	uint64_t begin, end;
+	int64_t begin, end;
 	char *range;
 	int parts;
 
@@ -337,6 +341,8 @@ static int preprocess_filename(char *filename, uint64_t *offset, uint64_t *size)
 	}
 
 	if (parts == 2) {
+		if ((begin < 0) ^ (end < 0))
+			return -pte_invalid;
 		if (end <= begin)
 			return -pte_invalid;
 
@@ -352,7 +358,7 @@ static int preprocess_filename(char *filename, uint64_t *offset, uint64_t *size)
 }
 
 static int load_file(uint8_t **buffer, size_t *psize, const char *filename,
-		     uint64_t offset, uint64_t size, const char *prog)
+		     int64_t offset, uint64_t size, const char *prog)
 {
 	uint8_t *content;
 	//size_t read;
@@ -387,8 +393,11 @@ static int load_file(uint8_t **buffer, size_t *psize, const char *filename,
 		goto err_file;
 	}
 
+	if (offset < 0)
+		offset += fsize;
+
 	begin = (long) offset;
-	if (((uint64_t) begin != offset) || (fsize <= begin)) {
+	if ((begin != offset) || (fsize <= begin)) {
 		fprintf(stderr,
 			"%s: bad offset 0x%" PRIx64 " into %s.\n",
 			prog, offset, filename);
@@ -922,6 +931,21 @@ static int track_cyc(struct ptdump_buffer *buffer,
 	return track_time(buffer, tracking, offset, options);
 }
 
+static int track_pip(struct ptdump_buffer *buffer,
+		     struct ptdump_tracking *tracking,  uint64_t offset,
+		     const struct pt_packet_pip *packet,
+		     const struct ptdump_options *options,
+		     const struct pt_config *config)
+{
+	(void)config;
+	if (!buffer || !tracking || !options)
+		return diag("error tracking pip", offset, -pte_internal);
+
+	tracking->in_nr = packet->nr;
+
+	return 0;
+}
+
 static uint64_t sext(uint64_t val, uint8_t sign)
 {
 	uint64_t signbit, mask;
@@ -1150,6 +1174,9 @@ static int print_packet(struct ptdump_buffer *buffer, uint64_t offset,
 		print_field(buffer->payload.standard, "%" PRIx64 "%s",
 			    packet->payload.pip.cr3,
 			    packet->payload.pip.nr ? ", nr" : "");
+		if (options->tma_skip_1b)
+			track_pip(buffer, tracking, offset,
+				  &packet->payload.pip, options, config);
 
 		print_field(buffer->tracking.id, "cr3");
 		print_field(buffer->tracking.payload, "%016" PRIx64,
@@ -1388,6 +1415,9 @@ static int dump_packets(struct pt_packet_decoder *decoder,
 		if (errcode < 0)
 			return diag("error getting offset", offset, errcode);
 
+		if (options->tma_skip_1b)
+			((struct pt_config*)pt_pkt_get_config(decoder))->errata.skxd54 =
+				                                        tracking->in_nr;
 		errcode = pt_pkt_next(decoder, &packet, sizeof(packet));
 		if (errcode < 0) {
 			if (errcode == -pte_eos)
@@ -1699,6 +1729,8 @@ static int process_args(int argc, char *argv[],
 			options->no_cyc = 1;
 		else if (strcmp(argv[idx], "--no-offset") == 0)
 			options->show_offset = 0;
+		else if (strcmp(argv[idx], "--tmas1b") == 0)
+			options->tma_skip_1b = 1;
 		else if (strcmp(argv[idx], "--raw") == 0)
 			options->show_raw_bytes = 1;
 		else if (strcmp(argv[idx], "--lastip") == 0)

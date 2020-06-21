@@ -363,7 +363,7 @@ int pt_pkt_read_tma(struct pt_packet_tma *packet, const uint8_t *pos,
 	packet->ctc = ctc;
 	packet->fc = fc;
 
-	return ptps_tma;
+	return ptps_tma + config->errata.skxd54;
 }
 
 int pt_pkt_read_mtc(struct pt_packet_mtc *packet, const uint8_t *pos,

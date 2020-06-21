@@ -341,8 +341,10 @@ struct pt_errata {
 	 */
 	uint32_t skl168:1;
 
+	uint32_t skxd54:1;
+
 	/* Reserve a few bytes for the future. */
-	uint32_t reserved[15];
+	uint32_t reserved[14];
 };
 
 /** A collection of decoder-specific configuration flags. */
